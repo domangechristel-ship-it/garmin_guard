@@ -1,0 +1,11 @@
+.venv
+.env
+data
+raw
+data/processed
+*.duckdb
+__pycache__
+*.pyc
+.prefect
+mlruns
+*.fit
