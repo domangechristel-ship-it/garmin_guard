@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 import pandas as pd
-from garmin_parser import compute_training_load
+from ingestion.garmin_parser import compute_training_load
 from src.ingestion.strava_auth import get_access_token
 from src.ingestion.strava_fetch import fetch_activities, to_dataframe
 
