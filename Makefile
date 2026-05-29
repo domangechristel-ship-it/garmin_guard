@@ -17,10 +17,12 @@ push_image_production:
 	docker push ${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/${ARTIFACTSREPO}/${IMAGE}:prod
 
 deploy_to_cloud_run:
-	gcloud run deploy \
+	gcloud run deploy ${IMAGE} \
 		--image ${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/${ARTIFACTSREPO}/${IMAGE}:prod \
 		--memory ${MEMORY} \
-		--region ${GCP_REGION}
+		--region ${GCP_REGION} \
+		--project ${GCP_PROJECT} \
+		--allow-unauthenticated
 
 deploy: build_for_production push_image_production deploy_to_cloud_run
 
@@ -34,4 +36,4 @@ check_permission:
 	gcloud projects add-iam-policy-binding ${GCP_PROJECT} --member=user:${GCP_EMAIL} --role="roles/artifactregistry.writer"
 
 create_artifact:
-	gcloud artifacts repositories create ${ARTIFACTSREPO} --repository-format=docker --location=${GCP_REGION} --description="My Docker Artifact Repository"
+	gcloud artifacts repositories create ${ARTIFACTSREPO} --repository-format=docker --location=${GCP_REGION} --project=${GCP_PROJECT} --description="My Docker Artifact Repository"
