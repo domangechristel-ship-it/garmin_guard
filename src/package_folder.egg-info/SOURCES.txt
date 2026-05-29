@@ -1,0 +1,10 @@
+README.md
+setup.py
+src/ingestion/strava_auth.py
+src/ingestion/strava_fetch.py
+src/ingestion/sync_daily.py
+src/package_folder.egg-info/PKG-INFO
+src/package_folder.egg-info/SOURCES.txt
+src/package_folder.egg-info/dependency_links.txt
+src/package_folder.egg-info/requires.txt
+src/package_folder.egg-info/top_level.txt
