@@ -142,6 +142,7 @@ def parse_activity(a):
         "elev_corrected": a.get("elevationCorrected", False),
         "start_lat": a.get("startLatitude"),
         "start_lon": a.get("startLongitude"),
+        "source": "garmin",
     }
     return row
 
@@ -175,7 +176,7 @@ def compute_training_load(df, sport_types=("RUNNING",)):
     TSB  = CTL - ATL  (positive = fresh, negative = fatigued)
     ACWR = ATL / CTL  (>1.5 = injury risk zone)
 
-    A TSS proxy is used when the raw TSS field is absent: duration_s × avg_hr / 3600 / 10.
+    A TSS (Training Stress Score) proxy is used when the raw TSS field is absent: duration_s × avg_hr / 3600 / 10.
     Returns a daily DataFrame with ATL, CTL, TSB, ACWR, consecutive training days,
     weekly load spike percentage, and an ACWR zone label.
     """
@@ -250,6 +251,8 @@ if __name__ == "__main__":
     print(f"\n─── ATL/CTL/ACWR — 14 derniers jours ───")
     print(load_df[["athlete_date","daily_tss","atl_7d","ctl_42d","tsb","acwr","acwr_zone"]].tail(14).to_string(index=False))
 
-    df.to_csv("activities_normalized.csv", index=False)
-    load_df.to_csv("training_load_features.csv", index=False)
-    print("\n✓ Exporté : activities_normalized.csv  |  training_load_features.csv")
+    out_dir = Path(filepath).parent.parent / "processed"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    df.to_csv(out_dir / "activities_normalized.csv", index=False)
+    load_df.to_csv(out_dir / "training_load_features.csv", index=False)
+    print(f"\n✓ Exporté : {out_dir}/activities_normalized.csv  |  {out_dir}/training_load_features.csv")
