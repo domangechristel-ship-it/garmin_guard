@@ -1,0 +1,9 @@
+# Sensitive
+.env
+.envrc
+
+# Raw data
+data/
+*.json
+*.fit
+*.csv
