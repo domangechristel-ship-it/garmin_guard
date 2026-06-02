@@ -37,3 +37,4 @@ streamlit
 plotly
 google-cloud-bigquery
 pyarrow
+pandas-gbq
