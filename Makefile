@@ -43,7 +43,12 @@ garmin_full_update:
 export_bigquery:
 	python src/ingestion/export_bigquery.py
 
-fetch_new_data: garmin_full_update export_bigquery
+fetch_new_data:
+	python src/ingestion/garmin_parser.py
+	python src/ingestion/wellness_parser.py
+	python src/ingestion/sync_daily.py
+	python src/ingestion/load_duckdb.py
+	python src/ingestion/export_bigquery.py
 
 # ---------- one time bash command -----------
 auth:
