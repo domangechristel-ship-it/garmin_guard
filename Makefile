@@ -26,8 +26,22 @@ deploy_to_cloud_run:
 
 deploy: build_for_production push_image_production deploy_to_cloud_run
 
+run_dashboard:
+	streamlit run streamlit_app.py
+
 garmin_update:
 	python src/ingestion/garmin_parser.py && python src/ingestion/wellness_parser.py
+
+load_duckdb:
+	python src/ingestion/load_duckdb.py
+
+garmin_full_update:
+	python src/ingestion/garmin_parser.py && \
+	python src/ingestion/wellness_parser.py && \
+	python src/ingestion/load_duckdb.py
+
+export_bigquery:
+	python src/ingestion/export_bigquery.py
 
 # ---------- one time bash command -----------
 auth:

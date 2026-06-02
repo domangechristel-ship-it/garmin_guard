@@ -5,5 +5,6 @@ RUN pip install -r requirements.txt
 
 COPY package_folder package_folder
 
-#CMD uvicorn package_folder.api_file:app --host 0.0.0.0
+ENV ENV=prod
+
 CMD uvicorn package_folder.api_file:app --host 0.0.0.0 --port $PORT

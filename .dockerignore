@@ -1,0 +1,11 @@
+.env
+data/
+*.duckdb
+__pycache__
+*.pyc
+.git
+.venv
+notebooks/
+tests/
+streamlit_app.py
+src/
