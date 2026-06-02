@@ -26,7 +26,8 @@ deploy_to_cloud_run:
 
 deploy: build_for_production push_image_production deploy_to_cloud_run
 
-
+garmin_update:
+	python src/ingestion/garmin_parser.py && python src/ingestion/wellness_parser.py
 
 # ---------- one time bash command -----------
 auth:

@@ -221,6 +221,44 @@ def parse_fitness_age(wellness_dir: Path) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Daily menstrual logs (symptoms & moods)
+# ---------------------------------------------------------------------------
+
+def parse_menstrual_logs(wellness_dir: Path) -> pd.DataFrame:
+    """Extract daily symptoms and moods from DailyMenstrualLogs.json."""
+    path = next(wellness_dir.glob("*_DailyMenstrualLogs.json"), None)
+    if not path:
+        return pd.DataFrame()
+
+    with open(path, encoding="utf-8") as f:
+        records = json.load(f)
+
+    rows = []
+    for r in records:
+        cal = r.get("calendarDate")
+        if not cal:
+            continue
+        symptoms = r.get("symptoms") or []
+        moods = r.get("moods") or []
+        if symptoms or moods:
+            rows.append({
+                "athlete_date": pd.to_datetime(cal),
+                "symptoms": ",".join(symptoms) if symptoms else None,
+                "moods": ",".join(moods) if moods else None,
+            })
+
+    if not rows:
+        return pd.DataFrame()
+
+    return (
+        pd.DataFrame(rows)
+        .drop_duplicates(subset=["athlete_date"])
+        .sort_values("athlete_date")
+        .reset_index(drop=True)
+    )
+
+
+# ---------------------------------------------------------------------------
 # HRV / Wellness activities
 # ---------------------------------------------------------------------------
 
@@ -278,19 +316,20 @@ def load_wellness(wellness_dir: str | Path, output_path: str | Path | None = Non
 
     sleep_df = parse_sleep(wellness_dir)
     menstrual_df = parse_menstrual(wellness_dir)
+    menstrual_logs_df = parse_menstrual_logs(wellness_dir)
     bio_df = parse_biometrics(wellness_dir)
     fitness_df = parse_fitness_age(wellness_dir)
     hrv_df = parse_hrv(wellness_dir)
 
     # Build full date range from all sources
     all_dates = pd.concat([
-        df["athlete_date"] for df in [sleep_df, menstrual_df, bio_df, fitness_df, hrv_df]
+        df["athlete_date"] for df in [sleep_df, menstrual_df, menstrual_logs_df, bio_df, fitness_df, hrv_df]
         if not df.empty
     ])
     date_range = pd.date_range(all_dates.min(), all_dates.max(), freq="D")
     base = pd.DataFrame({"athlete_date": date_range})
 
-    for df in [sleep_df, menstrual_df, bio_df, fitness_df, hrv_df]:
+    for df in [sleep_df, menstrual_df, menstrual_logs_df, bio_df, fitness_df, hrv_df]:
         if not df.empty:
             base = base.merge(df, on="athlete_date", how="left")
 
@@ -309,15 +348,18 @@ def load_wellness(wellness_dir: str | Path, output_path: str | Path | None = Non
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    wellness_dir = sys.argv[1] if len(sys.argv) > 1 else "data/raw/wellness"
-    out = Path(wellness_dir).parent.parent / "processed" / "wellness_normalized.csv"
+    ROOT = Path(__file__).resolve().parents[2]
+    wellness_dir = sys.argv[1] if len(sys.argv) > 1 else str(
+        ROOT / "data/raw/DI_CONNECT/DI-Connect-Wellness"
+    )
+    out = ROOT / "data" / "processed" / "wellness_normalized.csv"
 
     df = load_wellness(wellness_dir, output_path=out)
 
     print(f"\nPériode  : {df['athlete_date'].min().date()} → {df['athlete_date'].max().date()}")
     print(f"Colonnes : {list(df.columns)}\n")
 
-    for col in ["sleep_score", "cycle_phase", "weight_kg", "rhr_bpm", "hrv_rmssd"]:
+    for col in ["sleep_score", "cycle_phase", "weight_kg", "rhr_bpm", "hrv_rmssd", "symptoms", "moods"]:
         if col in df.columns:
             non_null = df[col].notna().sum()
             print(f"  {col:<22} {non_null} jours renseignés")

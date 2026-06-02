@@ -229,9 +229,71 @@ def compute_training_load(df, sport_types=("RUNNING",)):
     return daily
 
 
+def parse_gear(di_connect_dir: Path) -> pd.DataFrame:
+    """
+    Parse gear.json and return a DataFrame mapping each activity_id to its shoe.
+
+    Columns: activity_id, gear_name, gear_retired, gear_max_km.
+    """
+    fitness_dir = Path(di_connect_dir) / "DI-Connect-Fitness"
+    gear_path = next(fitness_dir.glob("*_gear.json"), None)
+    if not gear_path:
+        return pd.DataFrame()
+
+    with open(gear_path, encoding="utf-8") as f:
+        raw = json.load(f)
+
+    data = raw[0] if isinstance(raw, list) else raw
+
+    gear_info = {}
+    for g in data.get("gearDTOS", []):
+        gear_info[g["gearPk"]] = {
+            "gear_name": g.get("customMakeModel") or g.get("displayName") or "Unknown",
+            "gear_retired": g.get("gearStatusName") == "retired",
+            "gear_max_km": round(g["maximumMeters"] / 1000, 1) if g.get("maximumMeters") else None,
+        }
+
+    rows = []
+    for gear_pk_str, activities in data.get("gearActivityDTOs", {}).items():
+        info = gear_info.get(int(gear_pk_str), {})
+        for act in activities:
+            rows.append({"activity_id": act["activityId"], **info})
+
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows).sort_values("activity_id").reset_index(drop=True)
+
+
+def parse_coach_pauses(di_connect_dir: Path) -> pd.DataFrame:
+    """
+    Parse Garmin_Coach_Pause_History.json and return training pause intervals.
+
+    Columns: pause_start (UTC datetime), pause_end (UTC datetime or NaT), pause_reason.
+    """
+    pauses_path = Path(di_connect_dir) / "DI-ATP" / "Garmin_Coach_Pause_History.json"
+    if not pauses_path.exists():
+        return pd.DataFrame()
+
+    with open(pauses_path, encoding="utf-8") as f:
+        records = json.load(f)
+
+    rows = [
+        {
+            "pause_start": parse_timestamp(r.get("pauseStartDate")),
+            "pause_end": parse_timestamp(r.get("pauseEndDate")),
+            "pause_reason": r.get("pauseReason"),
+        }
+        for r in records
+    ]
+    return pd.DataFrame(rows)
+
+
 if __name__ == "__main__":
     import sys
-    filepath = sys.argv[1] if len(sys.argv) > 1 else "christel_d_live_fr_0_summarizedActivities.json"
+    ROOT = Path(__file__).resolve().parents[2]
+    filepath = sys.argv[1] if len(sys.argv) > 1 else str(
+        ROOT / "data/raw/DI_CONNECT/DI-Connect-Fitness/christel_d@live.fr_0_summarizedActivities.json"
+    )
 
     df = load_garmin_export(filepath)
     print(f"\nDataFrame : {df.shape[0]} lignes × {df.shape[1]} colonnes")
@@ -251,7 +313,7 @@ if __name__ == "__main__":
     print(f"\n─── ATL/CTL/ACWR — 14 derniers jours ───")
     print(load_df[["athlete_date","daily_tss","atl_7d","ctl_42d","tsb","acwr","acwr_zone"]].tail(14).to_string(index=False))
 
-    out_dir = Path(filepath).parent.parent / "processed"
+    out_dir = ROOT / "data" / "processed"
     out_dir.mkdir(parents=True, exist_ok=True)
     df.to_csv(out_dir / "activities_normalized.csv", index=False)
     load_df.to_csv(out_dir / "training_load_features.csv", index=False)
