@@ -43,6 +43,8 @@ garmin_full_update:
 export_bigquery:
 	python src/ingestion/export_bigquery.py
 
+fetch_new_data: garmin_full_update export_bigquery
+
 # ---------- one time bash command -----------
 auth:
 	gcloud auth configure-docker ${GCP_REGION}-docker.pkg.dev
