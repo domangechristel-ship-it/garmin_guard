@@ -17,7 +17,10 @@ DB_PATH = ROOT / "data" / "garmin_guard.duckdb"
 
 
 def main() -> None:
-    con = duckdb.connect(str(DB_PATH))
+    tmp_path = DB_PATH.with_suffix(".tmp.duckdb")
+    tmp_path.unlink(missing_ok=True)
+
+    con = duckdb.connect(str(tmp_path))
 
     tables = {
         "activities":     PROCESSED / "activities_normalized.csv",
@@ -34,6 +37,8 @@ def main() -> None:
         print(f"✓ {table:<15} {count} rows")
 
     con.close()
+    # Atomic replace — any reader holding the old file keeps their handle valid
+    tmp_path.replace(DB_PATH)
     print(f"\nDuckDB saved → {DB_PATH}")
 
 

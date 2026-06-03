@@ -13,7 +13,7 @@ import os
 import duckdb
 from pathlib import Path
 
-from pandas_gbq import to_gbq
+from google.cloud import bigquery
 
 ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = ROOT / "data" / "garmin_guard.duckdb"
@@ -54,22 +54,28 @@ WELLNESS_PUBLIC_COLS = [
 ]
 
 
-def _upload(df, table_id: str) -> None:
-    to_gbq(df, table_id, project_id=GCP_PROJECT, if_exists="replace")
+def _upload(client: bigquery.Client, df, table_id: str) -> None:
+    job_config = bigquery.LoadJobConfig(
+        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+        autodetect=True,
+    )
+    job = client.load_table_from_dataframe(df, table_id, job_config=job_config)
+    job.result()
     print(f"✓ {table_id}: {len(df)} rows")
 
 
 def main() -> None:
     con = duckdb.connect(str(DB_PATH), read_only=True)
+    client = bigquery.Client(project=GCP_PROJECT)
 
     acts = con.execute(f"SELECT {', '.join(ACTIVITIES_COLS)} FROM activities").df()
-    _upload(acts, f"garmin_guard.activities")
+    _upload(client, acts, f"{DATASET}.activities")
 
     load = con.execute(f"SELECT {', '.join(TRAINING_LOAD_COLS)} FROM training_load").df()
-    _upload(load, f"garmin_guard.training_load")
+    _upload(client, load, f"{DATASET}.training_load")
 
     well = con.execute(f"SELECT {', '.join(WELLNESS_PUBLIC_COLS)} FROM wellness").df()
-    _upload(well, f"garmin_guard.wellness_public")
+    _upload(client, well, f"{DATASET}.wellness_public")
 
     con.close()
     print(f"\nExport complete → BigQuery dataset {DATASET}")

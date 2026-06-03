@@ -1,0 +1,13 @@
+FROM python:3.12-slim
+
+COPY requirements.txt requirements.txt
+RUN pip install -r requirements.txt
+
+COPY streamlit_app.py streamlit_app.py
+
+ENV ENV=prod
+
+CMD streamlit run streamlit_app.py \
+    --server.port=$PORT \
+    --server.address=0.0.0.0 \
+    --server.headless=true

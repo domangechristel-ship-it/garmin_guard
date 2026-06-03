@@ -71,7 +71,7 @@ def get_activities(
     end_date: Optional[date] = None,
     sport_type: list[str] = Query(default=[]),
 ):
-    sql = f"SELECT * FROM {_tbl('activities')} {_where(start_date, end_date, sport_type)}"
+    sql = f"SELECT * FROM {_tbl('activities')} {_where(start_date, end_date, sport_type)} ORDER BY athlete_date"
     df = request.app.state.query(sql)
     return {"data": _to_records(df), "count": len(df)}
 
@@ -82,7 +82,7 @@ def get_training_load(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
 ):
-    sql = f"SELECT * FROM {_tbl('training_load')} {_where(start_date, end_date)}"
+    sql = f"SELECT * FROM {_tbl('training_load')} {_where(start_date, end_date)} ORDER BY athlete_date"
     df = request.app.state.query(sql)
     return {"data": _to_records(df), "count": len(df)}
 
@@ -94,6 +94,6 @@ def get_wellness(
     end_date: Optional[date] = None,
 ):
     tbl = "wellness" if ENV == "local" else "wellness_public"
-    sql = f"SELECT * FROM {_tbl(tbl)} {_where(start_date, end_date)}"
+    sql = f"SELECT * FROM {_tbl(tbl)} {_where(start_date, end_date)} ORDER BY athlete_date"
     df = request.app.state.query(sql)
     return {"data": _to_records(df), "count": len(df)}

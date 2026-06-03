@@ -26,8 +26,35 @@ deploy_to_cloud_run:
 
 deploy: build_for_production push_image_production deploy_to_cloud_run
 
+build_dashboard_prod:
+	docker build --platform linux/amd64 -f Dockerfile.streamlit \
+		-t ${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/${ARTIFACTSREPO}/${DASHBOARD_IMAGE}:prod .
+
+push_dashboard_prod:
+	docker push ${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/${ARTIFACTSREPO}/${DASHBOARD_IMAGE}:prod
+
+deploy_dashboard:
+	gcloud run deploy ${DASHBOARD_IMAGE} \
+		--image ${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/${ARTIFACTSREPO}/${DASHBOARD_IMAGE}:prod \
+		--memory ${MEMORY} \
+		--region ${GCP_REGION} \
+		--project ${GCP_PROJECT} \
+		--allow-unauthenticated \
+		--set-env-vars API_URL=${API_URL}
+
+deploy_full: deploy build_dashboard_prod push_dashboard_prod deploy_dashboard
+
 run_dashboard:
 	streamlit run streamlit_app.py
+
+start_local:
+	bash scripts/start_local.sh
+# Kills any stale process on port 8000
+# Starts the API in background, captures its PID
+# Waits until the API is healthy before touching Streamlit
+# Starts Streamlit in the foreground
+# Cleans up the API automatically on Ctrl+C
+
 
 garmin_update:
 	python src/ingestion/garmin_parser.py && python src/ingestion/wellness_parser.py

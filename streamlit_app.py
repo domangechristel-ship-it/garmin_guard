@@ -49,6 +49,8 @@ well = load_wellness()
 # ---------------------------------------------------------------------------
 
 st.sidebar.title("Garmin Guard")
+_env = "local" if "localhost" in API_URL else "prod"
+st.sidebar.caption(f"Mode : **{_env}** · `{API_URL}`")
 
 date_min = acts["athlete_date"].min().date()
 date_max = acts["athlete_date"].max().date()
@@ -213,7 +215,8 @@ with tab2:
     tbl["distance_km"] = (tbl["distance_m"] / 1000).round(2)
     tbl["duration_min"] = (tbl["duration_s"] / 60).round(1)
     tbl["pace_min_km"] = (tbl["avg_pace_s_km"] / 60).round(2)
-    tbl = tbl[list(display_cols.keys())].rename(columns=display_cols)
+    available_cols = {k: v for k, v in display_cols.items() if k in tbl.columns}
+    tbl = tbl[list(available_cols.keys())].rename(columns=available_cols)
     tbl["Date"] = tbl["Date"].dt.date
     st.dataframe(
         tbl.sort_values("Date", ascending=False).reset_index(drop=True),
@@ -281,8 +284,9 @@ with tab3:
         )
         st.plotly_chart(fig_sleep, width="stretch")
 
-    # Sleep durations stacked area
-    sleep_dur = well_f.dropna(subset=["deep_sleep_s", "light_sleep_s", "rem_sleep_s"])
+    # Sleep durations stacked area (local only — not in BigQuery)
+    _dur_cols = ["deep_sleep_s", "light_sleep_s", "rem_sleep_s"]
+    sleep_dur = well_f.dropna(subset=_dur_cols) if all(c in well_f.columns for c in _dur_cols) else pd.DataFrame()
     if not sleep_dur.empty:
         fig_dur = go.Figure()
         layers = [
@@ -307,8 +311,8 @@ with tab3:
         )
         st.plotly_chart(fig_dur, width="stretch")
 
-    # Weight trend
-    weight_df = well_f.dropna(subset=["weight_kg"])
+    # Weight trend (local only — not in BigQuery)
+    weight_df = well_f.dropna(subset=["weight_kg"]) if "weight_kg" in well_f.columns else pd.DataFrame()
     if not weight_df.empty:
         fig_weight = go.Figure()
         fig_weight.add_trace(go.Scatter(
