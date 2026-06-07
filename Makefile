@@ -67,14 +67,18 @@ garmin_full_update:
 	python src/ingestion/wellness_parser.py && \
 	python src/ingestion/load_duckdb.py
 
+garmin_daily_sync:
+	python src/ingestion/sync_garmin_connect.py --full && \
+	python src/ingestion/load_duckdb.py
+
 export_bigquery:
 	python src/ingestion/export_bigquery.py
 
 fetch_new_data:
-	python src/ingestion/garmin_parser.py
-	python src/ingestion/wellness_parser.py
-	python src/ingestion/sync_daily.py
-	python src/ingestion/load_duckdb.py
+	python src/ingestion/garmin_parser.py && \
+	python src/ingestion/wellness_parser.py && \
+	python src/ingestion/sync_garmin_connect.py --full && \
+	python src/ingestion/load_duckdb.py && \
 	python src/ingestion/export_bigquery.py
 
 # ---------- one time bash command -----------

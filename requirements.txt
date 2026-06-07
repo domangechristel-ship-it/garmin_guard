@@ -38,3 +38,4 @@ plotly
 google-cloud-bigquery
 pyarrow
 pandas-gbq
+prefect

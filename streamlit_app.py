@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -52,18 +53,19 @@ st.sidebar.title("Garmin Guard")
 _env = "local" if "localhost" in API_URL else "prod"
 st.sidebar.caption(f"Mode : **{_env}** · `{API_URL}`")
 
-date_min = acts["athlete_date"].min().date()
-date_max = acts["athlete_date"].max().date()
+date_min = min(acts["athlete_date"].min(), load["athlete_date"].min(), well["athlete_date"].min()).date()
+date_max = max(acts["athlete_date"].max(), load["athlete_date"].max(), well["athlete_date"].max()).date()
+default_start = max(date_min, date_max - timedelta(days=30))
 
 start_date, end_date = st.sidebar.date_input(
     "Date range",
-    value=(date_min, date_max),
+    value=(default_start, date_max),
     min_value=date_min,
     max_value=date_max,
 )
 
 sport_options = sorted(acts["sport_type"].dropna().unique())
-selected_sports = st.sidebar.multiselect("Sport types", sport_options, default=sport_options)
+selected_sports = st.sidebar.multiselect("Sport types", sport_options, default="RUNNING")
 
 # Apply date filter
 acts_f = acts[
@@ -105,6 +107,25 @@ with tab1:
         acwr_zone = last["acwr_zone"] if pd.notna(last["acwr_zone"]) else "—"
         c4.metric("ACWR Zone", acwr_zone, delta=f"{last['acwr']:.2f}")
 
+    # ACWR chart
+    fig_acwr = go.Figure()
+    fig_acwr.add_hrect(y0=0, y1=0.8, fillcolor="lightblue", opacity=0.15, line_width=0, annotation_text="sous-charge", annotation_position="top left")
+    fig_acwr.add_hrect(y0=0.8, y1=1.3, fillcolor="lightgreen", opacity=0.15, line_width=0, annotation_text="optimal", annotation_position="top left")
+    fig_acwr.add_hrect(y0=1.3, y1=1.5, fillcolor="yellow", opacity=0.15, line_width=0, annotation_text="attention", annotation_position="top left")
+    fig_acwr.add_hrect(y0=1.5, y1=5, fillcolor="red", opacity=0.12, line_width=0, annotation_text="risque", annotation_position="top left")
+    fig_acwr.add_trace(go.Scatter(
+        x=load_f["athlete_date"], y=load_f["acwr"],
+        name="ACWR", line=dict(color="#333333", width=2),
+    ))
+    fig_acwr.update_layout(
+        title="ACWR — ratio charge aiguë / chronique",
+        xaxis_title=None, yaxis_title="ACWR",
+        yaxis=dict(range=[0, min(load_f["acwr"].max() * 1.2, 4)]),
+        margin=dict(t=60, b=20), height=280,
+        showlegend=False,
+    )
+    st.plotly_chart(fig_acwr, width="stretch")
+
     # ATL / CTL chart
     fig_atl = go.Figure()
     fig_atl.add_trace(go.Scatter(
@@ -138,24 +159,6 @@ with tab1:
     )
     st.plotly_chart(fig_tsb, width="stretch")
 
-    # ACWR chart
-    fig_acwr = go.Figure()
-    fig_acwr.add_hrect(y0=0, y1=0.8, fillcolor="lightblue", opacity=0.15, line_width=0, annotation_text="sous-charge", annotation_position="top left")
-    fig_acwr.add_hrect(y0=0.8, y1=1.3, fillcolor="lightgreen", opacity=0.15, line_width=0, annotation_text="optimal", annotation_position="top left")
-    fig_acwr.add_hrect(y0=1.3, y1=1.5, fillcolor="yellow", opacity=0.15, line_width=0, annotation_text="attention", annotation_position="top left")
-    fig_acwr.add_hrect(y0=1.5, y1=5, fillcolor="red", opacity=0.12, line_width=0, annotation_text="risque", annotation_position="top left")
-    fig_acwr.add_trace(go.Scatter(
-        x=load_f["athlete_date"], y=load_f["acwr"],
-        name="ACWR", line=dict(color="#333333", width=2),
-    ))
-    fig_acwr.update_layout(
-        title="ACWR — ratio charge aiguë / chronique",
-        xaxis_title=None, yaxis_title="ACWR",
-        yaxis=dict(range=[0, min(load_f["acwr"].max() * 1.2, 4)]),
-        margin=dict(t=60, b=20), height=280,
-        showlegend=False,
-    )
-    st.plotly_chart(fig_acwr, width="stretch")
 
 
 # ===========================================================================
@@ -284,6 +287,9 @@ with tab3:
         )
         st.plotly_chart(fig_sleep, width="stretch")
 
+    # Cycle phase legend
+    st.caption("Phases du cycle : 🔴 menstruation · 🟢 folliculaire · 🟡 ovulation · 🔵 lutéale · 🟣 enceinte")
+
     # Sleep durations stacked area (local only — not in BigQuery)
     _dur_cols = ["deep_sleep_s", "light_sleep_s", "rem_sleep_s"]
     sleep_dur = well_f.dropna(subset=_dur_cols) if all(c in well_f.columns for c in _dur_cols) else pd.DataFrame()
@@ -311,24 +317,21 @@ with tab3:
         )
         st.plotly_chart(fig_dur, width="stretch")
 
-    # Weight trend (local only — not in BigQuery)
-    weight_df = well_f.dropna(subset=["weight_kg"]) if "weight_kg" in well_f.columns else pd.DataFrame()
-    if not weight_df.empty:
-        fig_weight = go.Figure()
-        fig_weight.add_trace(go.Scatter(
-            x=weight_df["athlete_date"], y=weight_df["weight_kg"],
-            mode="lines+markers", name="Poids",
-            line=dict(color="#E67E22", width=1.5),
-            marker=dict(size=3),
-        ))
-        fig_weight = add_cycle_bands(fig_weight, well_f)
-        fig_weight.update_layout(
-            title="Poids (kg) avec phases du cycle",
-            xaxis_title=None, yaxis_title="kg",
-            margin=dict(t=60, b=20), height=260,
-            showlegend=False,
-        )
-        st.plotly_chart(fig_weight, width="stretch")
-
-    # Cycle phase legend
-    st.caption("Phases du cycle : 🔴 menstruation · 🟢 folliculaire · 🟡 ovulation · 🔵 lutéale · 🟣 enceinte")
+    # # Weight trend (local only — not in BigQuery)
+    # weight_df = well_f.dropna(subset=["weight_kg"]) if "weight_kg" in well_f.columns else pd.DataFrame()
+    # if not weight_df.empty:
+    #     fig_weight = go.Figure()
+    #     fig_weight.add_trace(go.Scatter(
+    #         x=weight_df["athlete_date"], y=weight_df["weight_kg"],
+    #         mode="lines+markers", name="Poids",
+    #         line=dict(color="#E67E22", width=1.5),
+    #         marker=dict(size=3),
+    #     ))
+    #     fig_weight = add_cycle_bands(fig_weight, well_f)
+    #     fig_weight.update_layout(
+    #         title="Poids (kg) avec phases du cycle",
+    #         xaxis_title=None, yaxis_title="kg",
+    #         margin=dict(t=60, b=20), height=260,
+    #         showlegend=False,
+    #     )
+    #     st.plotly_chart(fig_weight, width="stretch")

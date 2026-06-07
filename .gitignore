@@ -9,3 +9,4 @@ __pycache__
 .prefect
 mlruns
 *.fit
+.garmin_tokens/
