@@ -33,3 +33,9 @@ ua-generator==2.1.1
 urllib3==2.7.0
 fastapi
 uvicorn
+streamlit
+plotly
+google-cloud-bigquery
+pyarrow
+pandas-gbq
+prefect

@@ -37,5 +37,11 @@ Requires-Dist: ua-generator==2.1.1
 Requires-Dist: urllib3==2.7.0
 Requires-Dist: fastapi
 Requires-Dist: uvicorn
+Requires-Dist: streamlit
+Requires-Dist: plotly
+Requires-Dist: google-cloud-bigquery
+Requires-Dist: pyarrow
+Requires-Dist: pandas-gbq
+Requires-Dist: prefect
 Dynamic: requires-dist
 Dynamic: summary

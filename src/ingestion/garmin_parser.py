@@ -200,7 +200,8 @@ def compute_training_load(df, sport_types=("RUNNING",)):
         .reset_index()
     )
 
-    date_range = pd.date_range(daily["athlete_date"].min(), daily["athlete_date"].max(), freq="D")
+    end_date = max(daily["athlete_date"].max(), pd.Timestamp.today().normalize())
+    date_range = pd.date_range(daily["athlete_date"].min(), end_date, freq="D")
     daily = (
         pd.DataFrame({"athlete_date": date_range})
         .merge(daily, on="athlete_date", how="left")
