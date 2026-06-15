@@ -407,6 +407,33 @@ def _plan_to_csv(plan: dict) -> bytes:
     return buf.getvalue().encode()
 
 
+_PHASE_COLORS = {
+    "MENSTRUAL":    "#F44336",
+    "FOLLICULAR":   "#4CAF50",
+    "OVULATION":    "#FFC107",
+    "LUTEAL_EARLY": "#2196F3",
+    "LUTEAL_LATE":  "#FF9800",
+}
+_PHASE_LEGEND = {
+    "MENSTRUAL":    "🔴 Menstruation",
+    "FOLLICULAR":   "🟢 Folliculaire",
+    "OVULATION":    "🟡 Ovulation",
+    "LUTEAL_EARLY": "🔵 Lutéale précoce",
+    "LUTEAL_LATE":  "🟠 Lutéale tardive",
+}
+
+
+def _cycle_phase(d: date, last_period: date, cycle_len: int, period_len: int) -> str:
+    """Return cycle phase name for date d."""
+    day = (d - last_period).days % cycle_len + 1
+    ovulation = cycle_len // 2
+    if day <= period_len:     return "MENSTRUAL"
+    if day <= ovulation - 2:  return "FOLLICULAR"
+    if day <= ovulation + 1:  return "OVULATION"
+    if day <= ovulation + 6:  return "LUTEAL_EARLY"
+    return "LUTEAL_LATE"
+
+
 def _project_acwr(last_atl: float, last_ctl: float, planned_tss: dict[str, float], days: int = 60) -> tuple[list, list]:
     """Project ATL/CTL/ACWR forward from today using planned daily TSS values."""
     alpha_atl = 2 / (7 + 1)
@@ -425,7 +452,7 @@ def _project_acwr(last_atl: float, last_ctl: float, planned_tss: dict[str, float
 
 
 with tab4:
-    st.header("Plan d'entraînement")
+    st.header("Training plan")
 
     # -----------------------------------------------------------------------
     # ACWR Dashboard — always visible, no form submit required
@@ -459,6 +486,50 @@ with tab4:
             _planned_records = _r_planned.json().get("data", [])
         except Exception:
             _planned_records = []
+
+    # Cycle overlay toggle — parameters auto-derived from synced wellness data
+    _show_cycle = st.checkbox("Afficher les phases du cycle menstruel")
+    _cycle_last_period: date | None = None
+    _cycle_length = 28
+    _cycle_period_len = 5
+
+    if _show_cycle:
+        _well_cycle = well.dropna(subset=["cycle_day"]).sort_values("athlete_date")
+        if _well_cycle.empty:
+            st.info(
+                "Aucune donnée de cycle trouvée dans Garmin Connect. "
+                "Synchronisez vos données (`sync_garmin_connect.py`) pour afficher les phases.",
+                icon="ℹ️",
+            )
+            _show_cycle = False
+        else:
+            _last_crow = _well_cycle.iloc[-1]
+            _last_cd = int(_last_crow["cycle_day"])
+            _last_cdate = pd.Timestamp(_last_crow["athlete_date"]).date()
+            _cycle_last_period = _last_cdate - timedelta(days=_last_cd - 1)
+
+            # Cycle length: average gap between consecutive day-1 dates
+            _day1_dates = _well_cycle[_well_cycle["cycle_day"] == 1]["athlete_date"].sort_values()
+            if len(_day1_dates) >= 2:
+                _gaps = [
+                    (pd.Timestamp(b).date() - pd.Timestamp(a).date()).days
+                    for a, b in zip(_day1_dates.iloc[:-1], _day1_dates.iloc[1:])
+                ]
+                _cycle_length = int(round(sum(_gaps) / len(_gaps)))
+
+            # Period length: count days active since last period start
+            if "period_active" in _well_cycle.columns:
+                _prows = _well_cycle[
+                    (_well_cycle["athlete_date"] >= pd.Timestamp(_cycle_last_period)) &
+                    (_well_cycle["period_active"].fillna(False).astype(bool))
+                ]
+                if not _prows.empty:
+                    _cycle_period_len = len(_prows)
+
+            st.caption(
+                f"Cycle détecté depuis Garmin : dernières règles le **{_cycle_last_period}**, "
+                f"cycle de **{_cycle_length} j**, règles de **{_cycle_period_len} j**."
+            )
 
     # Actual ACWR from training_load
     _actual_df = pd.DataFrame(_load_records) if _load_records else pd.DataFrame()
@@ -533,6 +604,25 @@ with tab4:
                 hovertemplate="%{text}<br>ACWR: %{y:.2f}<extra></extra>",
             ))
 
+    # Cycle phase bands
+    if _show_cycle and _cycle_last_period:
+        _all_chart_dates = list(_actual_dates) + list(_proj_dates)
+        if _all_chart_dates:
+            _ph_start = _all_chart_dates[0]
+            _cur_ph = _cycle_phase(_ph_start, _cycle_last_period, _cycle_length, _cycle_period_len)
+            for _cd in _all_chart_dates[1:]:
+                _ph = _cycle_phase(_cd, _cycle_last_period, _cycle_length, _cycle_period_len)
+                if _ph != _cur_ph:
+                    _fig_acwr_dash.add_vrect(
+                        x0=str(_ph_start), x1=str(_cd),
+                        fillcolor=_PHASE_COLORS[_cur_ph], opacity=0.10, line_width=0, layer="below",
+                    )
+                    _ph_start, _cur_ph = _cd, _ph
+            _fig_acwr_dash.add_vrect(
+                x0=str(_ph_start), x1=str(_all_chart_dates[-1]),
+                fillcolor=_PHASE_COLORS[_cur_ph], opacity=0.10, line_width=0, layer="below",
+            )
+
     # Today vertical line
     _fig_acwr_dash.add_shape(
         type="line",
@@ -555,6 +645,9 @@ with tab4:
 
     st.plotly_chart(_fig_acwr_dash, use_container_width=True)
 
+    if _show_cycle and _cycle_last_period:
+        st.caption("  ·  ".join(_PHASE_LEGEND.values()))
+
     if not _planned_records:
         st.info(
             "Aucune séance planifiée trouvée dans Garmin Connect. "
@@ -565,175 +658,175 @@ with tab4:
     else:
         st.caption(f"{len(_planned_records)} séance(s) planifiée(s) importée(s) depuis Garmin Connect.")
 
-    st.divider()
+    # st.divider()
 
-    col_params, col_results = st.columns([1, 2], gap="large")
+    # col_params, col_results = st.columns([1, 2], gap="large")
 
-    with col_params:
-        st.subheader("Course objectif")
-        race_date_input = st.date_input(
-            "Date de la course",
-            value=date.today() + timedelta(weeks=16),
-            min_value=date.today() + timedelta(days=7),
-        )
-        race_distance = st.number_input("Distance (km)", min_value=1.0, max_value=200.0, value=42.0, step=0.5)
-        race_elevation = st.number_input("Dénivelé positif (m)", min_value=0, max_value=10000, value=0, step=100)
-        race_priority = st.selectbox("Priorité", ["A", "B", "C"], index=0)
+    # with col_params:
+    #     st.subheader("Course objectif")
+    #     race_date_input = st.date_input(
+    #         "Date de la course",
+    #         value=date.today() + timedelta(weeks=16),
+    #         min_value=date.today() + timedelta(days=7),
+    #     )
+    #     race_distance = st.number_input("Distance (km)", min_value=1.0, max_value=200.0, value=42.0, step=0.5)
+    #     race_elevation = st.number_input("Dénivelé positif (m)", min_value=0, max_value=10000, value=0, step=100)
+    #     race_priority = st.selectbox("Priorité", ["A", "B", "C"], index=0)
 
-        st.subheader("Fréquence")
-        sessions_per_week = st.slider("Séances par semaine", min_value=3, max_value=4, value=3)
-        rest_days_input = st.multiselect(
-            "Jours de repos",
-            options=list(range(7)),
-            default=[1, 3],
-            format_func=lambda x: _DAY_NAMES[x],
-        )
-        long_day_input = st.selectbox(
-            "Jour trail long",
-            options=[d for d in range(7) if d not in rest_days_input],
-            index=0,
-            format_func=lambda x: _DAY_NAMES[x],
-        )
+    #     st.subheader("Fréquence")
+    #     sessions_per_week = st.slider("Séances par semaine", min_value=3, max_value=4, value=3)
+    #     rest_days_input = st.multiselect(
+    #         "Jours de repos",
+    #         options=list(range(7)),
+    #         default=[1, 3],
+    #         format_func=lambda x: _DAY_NAMES[x],
+    #     )
+    #     long_day_input = st.selectbox(
+    #         "Jour trail long",
+    #         options=[d for d in range(7) if d not in rest_days_input],
+    #         index=0,
+    #         format_func=lambda x: _DAY_NAMES[x],
+    #     )
 
-        cycle_aware = False
-        last_period_start = None
-        cycle_length = None
-        period_length = None
+    #     cycle_aware = False
+    #     last_period_start = None
+    #     cycle_length = None
+    #     period_length = None
 
-        with st.expander("Cycle menstruel (optionnel)"):
-            cycle_aware = st.toggle("Activer la prise en compte du cycle")
-            if cycle_aware:
-                st.info(
-                    "Ces données restent locales et ne sont jamais envoyées à une API externe.",
-                    icon="🔒",
-                )
-                cycle_length = st.number_input("Durée du cycle (jours)", min_value=21, max_value=40, value=28)
-                period_length = st.number_input("Durée des règles (jours)", min_value=2, max_value=10, value=5)
-                last_period_start = st.date_input(
-                    "Début des dernières règles",
-                    value=date.today() - timedelta(days=14),
-                    max_value=date.today(),
-                )
+    #     with st.expander("Cycle menstruel (optionnel)"):
+    #         cycle_aware = st.toggle("Activer la prise en compte du cycle")
+    #         if cycle_aware:
+    #             st.info(
+    #                 "Ces données restent locales et ne sont jamais envoyées à une API externe.",
+    #                 icon="🔒",
+    #             )
+    #             cycle_length = st.number_input("Durée du cycle (jours)", min_value=21, max_value=40, value=28)
+    #             period_length = st.number_input("Durée des règles (jours)", min_value=2, max_value=10, value=5)
+    #             last_period_start = st.date_input(
+    #                 "Début des dernières règles",
+    #                 value=date.today() - timedelta(days=14),
+    #                 max_value=date.today(),
+    #             )
 
-        generate = st.button("Générer mon plan", type="primary", use_container_width=True)
+    #     generate = st.button("Générer mon plan", type="primary", use_container_width=True)
 
-    with col_results:
-        if generate:
-            payload = {
-                "race_date": str(race_date_input),
-                "race_distance_km": race_distance,
-                "race_elevation_m": race_elevation,
-                "race_priority": race_priority,
-                "sessions_per_week": sessions_per_week,
-                "rest_days": rest_days_input,
-                "preferred_long_day": long_day_input,
-            }
-            if cycle_aware and last_period_start:
-                payload["last_period_start"] = str(last_period_start)
-                payload["cycle_length_days"] = cycle_length
-                payload["period_length_days"] = period_length
+    # with col_results:
+    #     if generate:
+    #         payload = {
+    #             "race_date": str(race_date_input),
+    #             "race_distance_km": race_distance,
+    #             "race_elevation_m": race_elevation,
+    #             "race_priority": race_priority,
+    #             "sessions_per_week": sessions_per_week,
+    #             "rest_days": rest_days_input,
+    #             "preferred_long_day": long_day_input,
+    #         }
+    #         if cycle_aware and last_period_start:
+    #             payload["last_period_start"] = str(last_period_start)
+    #             payload["cycle_length_days"] = cycle_length
+    #             payload["period_length_days"] = period_length
 
-            with st.spinner("Génération du plan…"):
-                try:
-                    resp = requests.post(f"{API_URL}/training-plan", json=payload, timeout=30)
-                    resp.raise_for_status()
-                    plan = resp.json()
-                except Exception as e:
-                    st.error(f"Erreur lors de la génération : {e}")
-                    st.stop()
+    #         with st.spinner("Génération du plan…"):
+    #             try:
+    #                 resp = requests.post(f"{API_URL}/training-plan", json=payload, timeout=30)
+    #                 resp.raise_for_status()
+    #                 plan = resp.json()
+    #             except Exception as e:
+    #                 st.error(f"Erreur lors de la génération : {e}")
+    #                 st.stop()
 
-            # Warnings
-            for w in plan.get("warnings", []):
-                st.warning(w)
+    #         # Warnings
+    #         for w in plan.get("warnings", []):
+    #             st.warning(w)
 
-            # Summary metrics
-            total_sessions = sum(len(w["sessions"]) for w in plan["weeks"])
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Semaines", plan["total_weeks"])
-            m2.metric("CTL actuel → projeté", f"{plan['ctl_start']} → {plan['ctl_projected']}")
-            m3.metric("Séances totales", total_sessions)
+    #         # Summary metrics
+    #         total_sessions = sum(len(w["sessions"]) for w in plan["weeks"])
+    #         m1, m2, m3 = st.columns(3)
+    #         m1.metric("Semaines", plan["total_weeks"])
+    #         m2.metric("CTL actuel → projeté", f"{plan['ctl_start']} → {plan['ctl_projected']}")
+    #         m3.metric("Séances totales", total_sessions)
 
-            st.divider()
+    #         st.divider()
 
-            # Weekly calendar
-            st.subheader("Calendrier hebdomadaire")
-            calendar_df = _plan_to_calendar(plan["weeks"])
-            st.dataframe(calendar_df.set_index("Semaine"), use_container_width=True)
+    #         # Weekly calendar
+    #         st.subheader("Calendrier hebdomadaire")
+    #         calendar_df = _plan_to_calendar(plan["weeks"])
+    #         st.dataframe(calendar_df.set_index("Semaine"), use_container_width=True)
 
-            st.divider()
+    #         st.divider()
 
-            # ACWR projection chart
-            st.subheader("ACWR projeté")
-            weeks_data = plan["weeks"]
-            week_labels = [f"S{w['week_number']}" for w in weeks_data]
-            acwr_values = [w.get("acwr_projected") for w in weeks_data]
+    #         # ACWR projection chart
+    #         st.subheader("ACWR projeté")
+    #         weeks_data = plan["weeks"]
+    #         week_labels = [f"S{w['week_number']}" for w in weeks_data]
+    #         acwr_values = [w.get("acwr_projected") for w in weeks_data]
 
-            fig_plan_acwr = go.Figure()
-            fig_plan_acwr.add_hrect(
-                y0=0, y1=0.8, fillcolor="lightblue", opacity=0.15, line_width=0,
-                annotation_text="sous-charge", annotation_position="top left",
-            )
-            fig_plan_acwr.add_hrect(
-                y0=0.8, y1=1.3, fillcolor="lightgreen", opacity=0.15, line_width=0,
-                annotation_text="optimal", annotation_position="top left",
-            )
-            fig_plan_acwr.add_hrect(
-                y0=1.3, y1=1.5, fillcolor="yellow", opacity=0.15, line_width=0,
-                annotation_text="attention", annotation_position="top left",
-            )
-            fig_plan_acwr.add_hrect(
-                y0=1.5, y1=5, fillcolor="red", opacity=0.12, line_width=0,
-                annotation_text="risque", annotation_position="top left",
-            )
-            fig_plan_acwr.add_trace(go.Scatter(
-                x=week_labels, y=acwr_values,
-                name="ACWR projeté", line=dict(color="#333333", width=2),
-                mode="lines+markers", marker=dict(size=6),
-            ))
-            fig_plan_acwr.update_layout(
-                xaxis_title=None, yaxis_title="ACWR",
-                yaxis=dict(range=[0, 1.6]),
-                margin=dict(t=20, b=20), height=260,
-                showlegend=False,
-            )
-            st.plotly_chart(fig_plan_acwr, use_container_width=True)
+    #         fig_plan_acwr = go.Figure()
+    #         fig_plan_acwr.add_hrect(
+    #             y0=0, y1=0.8, fillcolor="lightblue", opacity=0.15, line_width=0,
+    #             annotation_text="sous-charge", annotation_position="top left",
+    #         )
+    #         fig_plan_acwr.add_hrect(
+    #             y0=0.8, y1=1.3, fillcolor="lightgreen", opacity=0.15, line_width=0,
+    #             annotation_text="optimal", annotation_position="top left",
+    #         )
+    #         fig_plan_acwr.add_hrect(
+    #             y0=1.3, y1=1.5, fillcolor="yellow", opacity=0.15, line_width=0,
+    #             annotation_text="attention", annotation_position="top left",
+    #         )
+    #         fig_plan_acwr.add_hrect(
+    #             y0=1.5, y1=5, fillcolor="red", opacity=0.12, line_width=0,
+    #             annotation_text="risque", annotation_position="top left",
+    #         )
+    #         fig_plan_acwr.add_trace(go.Scatter(
+    #             x=week_labels, y=acwr_values,
+    #             name="ACWR projeté", line=dict(color="#333333", width=2),
+    #             mode="lines+markers", marker=dict(size=6),
+    #         ))
+    #         fig_plan_acwr.update_layout(
+    #             xaxis_title=None, yaxis_title="ACWR",
+    #             yaxis=dict(range=[0, 1.6]),
+    #             margin=dict(t=20, b=20), height=260,
+    #             showlegend=False,
+    #         )
+    #         st.plotly_chart(fig_plan_acwr, use_container_width=True)
 
-            # Cycle impact chart (only when cycle_aware)
-            if plan.get("cycle_aware"):
-                st.subheader("Impact du cycle menstruel sur la charge")
-                raw_loads = [w["target_load"] / w["load_modifier"] if w["load_modifier"] else w["target_load"] for w in weeks_data]
-                cycle_loads = [w["target_load"] for w in weeks_data]
+    #         # Cycle impact chart (only when cycle_aware)
+    #         if plan.get("cycle_aware"):
+    #             st.subheader("Impact du cycle menstruel sur la charge")
+    #             raw_loads = [w["target_load"] / w["load_modifier"] if w["load_modifier"] else w["target_load"] for w in weeks_data]
+    #             cycle_loads = [w["target_load"] for w in weeks_data]
 
-                fig_cycle = go.Figure()
-                fig_cycle.add_trace(go.Bar(
-                    x=week_labels, y=raw_loads,
-                    name="Sans modulation cycle", marker_color="#B0C4DE", opacity=0.7,
-                ))
-                fig_cycle.add_trace(go.Bar(
-                    x=week_labels, y=cycle_loads,
-                    name="Avec modulation cycle", marker_color="#E67E22",
-                ))
-                fig_cycle.update_layout(
-                    barmode="overlay",
-                    xaxis_title=None, yaxis_title="TSS hebdo",
-                    legend=dict(orientation="h", y=1.1),
-                    margin=dict(t=20, b=20), height=260,
-                )
-                st.plotly_chart(fig_cycle, use_container_width=True)
+    #             fig_cycle = go.Figure()
+    #             fig_cycle.add_trace(go.Bar(
+    #                 x=week_labels, y=raw_loads,
+    #                 name="Sans modulation cycle", marker_color="#B0C4DE", opacity=0.7,
+    #             ))
+    #             fig_cycle.add_trace(go.Bar(
+    #                 x=week_labels, y=cycle_loads,
+    #                 name="Avec modulation cycle", marker_color="#E67E22",
+    #             ))
+    #             fig_cycle.update_layout(
+    #                 barmode="overlay",
+    #                 xaxis_title=None, yaxis_title="TSS hebdo",
+    #                 legend=dict(orientation="h", y=1.1),
+    #                 margin=dict(t=20, b=20), height=260,
+    #             )
+    #             st.plotly_chart(fig_cycle, use_container_width=True)
 
-                # Phase legend
-                st.subheader("Légende des phases")
-                for phase, icon in _PHASE_ICONS.items():
-                    st.caption(f"{icon} **{phase}** — {_PHASE_LABELS[phase]}")
+    #             # Phase legend
+    #             st.subheader("Légende des phases")
+    #             for phase, icon in _PHASE_ICONS.items():
+    #                 st.caption(f"{icon} **{phase}** — {_PHASE_LABELS[phase]}")
 
-            st.divider()
+    #         st.divider()
 
-            # CSV export
-            csv_bytes = _plan_to_csv(plan)
-            st.download_button(
-                label="Exporter le plan (CSV)",
-                data=csv_bytes,
-                file_name=f"plan_entrainement_{race_date_input}.csv",
-                mime="text/csv",
-                use_container_width=True,
-            )
+    #         # CSV export
+    #         csv_bytes = _plan_to_csv(plan)
+    #         st.download_button(
+    #             label="Exporter le plan (CSV)",
+    #             data=csv_bytes,
+    #             file_name=f"plan_entrainement_{race_date_input}.csv",
+    #             mime="text/csv",
+    #             use_container_width=True,
+    #         )
