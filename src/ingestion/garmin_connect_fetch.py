@@ -281,6 +281,124 @@ def fetch_wellness(client: Garmin, start_date: date, end_date: date) -> pd.DataF
 
 
 # ---------------------------------------------------------------------------
+# Scheduled (planned) workouts
+# ---------------------------------------------------------------------------
+
+_WORKOUT_HR_KEYWORDS: list[tuple[tuple[str, ...], int]] = [
+    (("recup", "recov", "easy", "facile", "cool"), 130),
+    (("tempo", "seuil", "threshold"), 155),
+    (("interval", "fractionné", "vma", "hiit", "rapide"), 165),
+    (("long", "sortie"), 140),
+]
+_DEFAULT_ASSUMED_HR = 140
+
+
+def _estimate_assumed_hr(name: str) -> int:
+    lower = name.lower()
+    for keywords, hr in _WORKOUT_HR_KEYWORDS:
+        if any(kw in lower for kw in keywords):
+            return hr
+    return _DEFAULT_ASSUMED_HR
+
+
+_SCHEDULED_COLS = ["scheduled_date", "workout_id", "workout_name", "sport_type", "duration_s", "distance_m", "tss_estimated", "item_type"]
+
+
+_TRAIL_PACE_S_PER_KM = 480  # 8 min/km default for trail/outdoor races
+
+
+def _event_duration_from_target(item: dict) -> float | None:
+    """Estimate race duration from completionTarget distance (trail pace)."""
+    target = item.get("completionTarget") or {}
+    if target.get("unitType") == "distance":
+        dist_m = target.get("value") or 0
+        if dist_m > 0:
+            return round(dist_m / 1000 * _TRAIL_PACE_S_PER_KM)
+    return None
+
+
+def _normalise_calendar_item(item: dict, duration_s: float | None) -> dict:
+    """Normalise a calendarItem (flat dict) into a planned_workouts row."""
+    item_type = item.get("itemType", "workout")
+    sport_key = item.get("sportTypeKey") or ""
+    name = item.get("title") or ""
+    distance_raw = item.get("distance")
+
+    # For race events: estimate duration from target distance if not provided
+    if item_type == "event" and duration_s is None:
+        duration_s = _event_duration_from_target(item)
+
+    # Race events run at high intensity; workouts use name-based heuristic
+    assumed_hr = 165 if item_type == "event" else _estimate_assumed_hr(name)
+    tss_estimated = round(duration_s * assumed_hr / 3600 / 10, 1) if duration_s else None
+
+    return {
+        "scheduled_date": item.get("date"),
+        "workout_id": item.get("workoutId"),
+        "workout_name": name,
+        "sport_type": ACTIVITY_TYPE_MAP.get(sport_key, sport_key.upper() if sport_key else "OTHER"),
+        "duration_s": duration_s,
+        "distance_m": round(distance_raw / 100, 1) if distance_raw else None,
+        "tss_estimated": tss_estimated,
+        "item_type": item_type,
+    }
+
+
+def _months_in_range(start: date, end: date) -> list[tuple[int, int]]:
+    """Return list of (year, month) tuples covering the range [start, end]."""
+    months = []
+    y, m = start.year, start.month
+    while (y, m) <= (end.year, end.month):
+        months.append((y, m))
+        m += 1
+        if m > 12:
+            m, y = 1, y + 1
+    return months
+
+
+def fetch_scheduled_workouts(client: Garmin, start_date: date, end_date: date) -> pd.DataFrame:
+    """Fetch planned workouts and race events from the Garmin Connect calendar within [start_date, end_date].
+
+    Collects itemType='workout' (training sessions) and itemType='event' (races/courses).
+    Duration for workouts is fetched via get_workout_by_id(); for events it is estimated
+    from the completionTarget distance at trail race pace (8 min/km).
+    """
+    all_items: list[dict] = []
+    for year, month in _months_in_range(start_date, end_date):
+        try:
+            raw = client.get_scheduled_workouts(year, month) or {}
+            all_items.extend(raw.get("calendarItems") or [])
+        except Exception as e:
+            print(f"  ⚠ get_scheduled_workouts({year}-{month:02d}): {e}")
+
+    planned = [i for i in all_items if i.get("itemType") in ("workout", "event")]
+    print(f"→ {len(planned)} éléments planifiés trouvés (séances + événements)")
+    if not planned:
+        return pd.DataFrame(columns=_SCHEDULED_COLS)
+
+    # Fetch duration from workout details (estimatedDurationInSecs)
+    workout_durations: dict[int, float | None] = {}
+    for item in planned:
+        wid = item.get("workoutId")
+        if wid and wid not in workout_durations:
+            try:
+                detail = client.get_workout_by_id(wid) or {}
+                workout_durations[wid] = detail.get("estimatedDurationInSecs")
+            except Exception as e:
+                print(f"  ⚠ get_workout_by_id({wid}): {e}")
+                workout_durations[wid] = None
+            time.sleep(0.3)
+
+    rows = [_normalise_calendar_item(item, workout_durations.get(item.get("workoutId"))) for item in planned]
+    df = pd.DataFrame(rows)
+    df["scheduled_date"] = pd.to_datetime(df["scheduled_date"]).dt.date
+    mask = (df["scheduled_date"] >= start_date) & (df["scheduled_date"] <= end_date)
+    df = df[mask].sort_values("scheduled_date").reset_index(drop=True)
+    print(f"→ {len(df)} séances entre {start_date} et {end_date}")
+    return df
+
+
+# ---------------------------------------------------------------------------
 # Self-evaluations
 # ---------------------------------------------------------------------------
 
@@ -317,6 +435,7 @@ def run_incremental_sync(
     password: str,
     activities_csv: Path,
     wellness_csv: Path,
+    planned_workouts_csv: Path | None = None,
     after_date: date | None = None,
 ) -> None:
     """Orchestrate full incremental sync: fetch → merge → save both CSVs."""
@@ -334,9 +453,19 @@ def run_incremental_sync(
                     last_dt = gc_rows["athlete_date"].max()
                     after_date = last_dt.date() + timedelta(days=1)
 
+    # --- Planned workouts always refreshed regardless of activity date range ---
+    n_planned = 0
+    if planned_workouts_csv is not None:
+        planned_end = today + timedelta(days=60)
+        planned_df = fetch_scheduled_workouts(client, today, planned_end)
+        planned_workouts_csv.parent.mkdir(parents=True, exist_ok=True)
+        planned_df.to_csv(planned_workouts_csv, index=False)
+        n_planned = len(planned_df)
+        print(f"✓ planned_workouts.csv — {n_planned} séances planifiées")
+
     if after_date > today:
-        print("→ Rien à synchroniser (after_date > aujourd'hui)")
-        _print_summary(0, 0, 0, 0, 0)
+        print("→ Rien à synchroniser pour les activités (after_date > aujourd'hui)")
+        _print_summary(0, 0, 0, 0, n_planned)
         return
 
     print(f"→ Sync depuis {after_date} jusqu'à {today}")
@@ -396,10 +525,11 @@ def run_incremental_sync(
     load_df.to_csv(load_csv, index=False)
     print(f"✓ training_load_features.csv régénéré — {len(load_df)} jours")
 
-    _print_summary(n_new_acts, total_acts, n_wellness, len(new_evals))
+    _print_summary(n_new_acts, total_acts, n_wellness, len(new_evals), n_planned)
 
 
-def _print_summary(n_new_acts: int, total_acts: int, n_wellness: int, n_evals: int) -> None:
+def _print_summary(n_new_acts: int, total_acts: int, n_wellness: int, n_evals: int, n_planned: int = 0) -> None:
     print(f"\n✓ Activités  : {n_new_acts} nouvelles ajoutées (total : {total_acts})")
     print(f"✓ Wellness   : {n_wellness} jours mis à jour")
     print(f"✓ Self-evals : {n_evals} évaluations fetched")
+    print(f"✓ Planifiées : {n_planned} séances (60 prochains jours)")

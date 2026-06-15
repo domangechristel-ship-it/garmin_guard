@@ -23,12 +23,16 @@ def main() -> None:
     con = duckdb.connect(str(tmp_path))
 
     tables = {
-        "activities":     PROCESSED / "activities_normalized.csv",
-        "training_load":  PROCESSED / "training_load_features.csv",
-        "wellness":       PROCESSED / "wellness_normalized.csv",
+        "activities":        PROCESSED / "activities_normalized.csv",
+        "training_load":     PROCESSED / "training_load_features.csv",
+        "wellness":          PROCESSED / "wellness_normalized.csv",
+        "planned_workouts":  PROCESSED / "planned_workouts.csv",
     }
 
     for table, csv_path in tables.items():
+        if not csv_path.exists():
+            print(f"⚠ {table:<15} CSV introuvable, ignoré ({csv_path.name})")
+            continue
         con.execute(
             f"CREATE OR REPLACE TABLE {table} AS "
             f"SELECT * FROM read_csv_auto('{csv_path}')"
