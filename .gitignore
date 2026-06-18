@@ -10,3 +10,5 @@ __pycache__
 mlruns
 *.fit
 .garmin_tokens/
+*.egg-info/
+notebooks/

@@ -53,6 +53,11 @@ WELLNESS_PUBLIC_COLS = [
     # EXCLUDED: all menstrual data, sleep durations, HRV, weight, bio_age, bmi
 ]
 
+PLANNED_WORKOUTS_COLS = [
+    "scheduled_date", "workout_id", "workout_name",
+    "sport_type", "duration_s", "distance_m", "tss_estimated", "item_type",
+]
+
 
 def _upload(client: bigquery.Client, df, table_id: str) -> None:
     job_config = bigquery.LoadJobConfig(
@@ -76,6 +81,12 @@ def main() -> None:
 
     well = con.execute(f"SELECT {', '.join(WELLNESS_PUBLIC_COLS)} FROM wellness").df()
     _upload(client, well, f"{DATASET}.wellness_public")
+
+    try:
+        planned = con.execute(f"SELECT {', '.join(PLANNED_WORKOUTS_COLS)} FROM planned_workouts").df()
+        _upload(client, planned, f"{DATASET}.planned_workouts")
+    except Exception as e:
+        print(f"⚠ planned_workouts ignoré (table absente ou vide) : {e}")
 
     con.close()
     print(f"\nExport complete → BigQuery dataset {DATASET}")

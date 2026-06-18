@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT))
 PROCESSED = ROOT / "data" / "processed"
 ACTIVITIES_CSV = PROCESSED / "activities_normalized.csv"
 WELLNESS_CSV = PROCESSED / "wellness_normalized.csv"
+PLANNED_WORKOUTS_CSV = PROCESSED / "planned_workouts.csv"
 
 BACKFILL_START = date(2026, 5, 30)
 
@@ -57,6 +58,7 @@ try:
             password=password,
             activities_csv=ACTIVITIES_CSV,
             wellness_csv=WELLNESS_CSV,
+            planned_workouts_csv=PLANNED_WORKOUTS_CSV,
         )
 
 except ImportError:
@@ -87,6 +89,7 @@ def main() -> None:
         password=password,
         activities_csv=ACTIVITIES_CSV,
         wellness_csv=WELLNESS_CSV,
+        planned_workouts_csv=PLANNED_WORKOUTS_CSV,
         after_date=after,
     )
 
