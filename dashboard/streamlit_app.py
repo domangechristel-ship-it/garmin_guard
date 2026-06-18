@@ -1,5 +1,6 @@
 import io
 import os
+import time
 from datetime import date, timedelta
 
 import pandas as pd
@@ -67,6 +68,34 @@ start_date, end_date = st.sidebar.date_input(
 
 sport_options = sorted(acts["sport_type"].dropna().unique())
 selected_sports = st.sidebar.multiselect("Sport types", sport_options, default="RUNNING")
+
+# ---------------------------------------------------------------------------
+# Manual refresh button
+# ---------------------------------------------------------------------------
+
+st.sidebar.divider()
+if st.sidebar.button("Actualiser les données", use_container_width=True):
+    try:
+        resp = requests.post(f"{API_URL}/sync", timeout=5)
+        if resp.json().get("status") in ("started", "already_running"):
+            st.session_state["syncing"] = True
+    except Exception as _e:
+        st.sidebar.error(f"Impossible de contacter l'API : {_e}")
+
+if st.session_state.get("syncing"):
+    _sync_status = requests.get(f"{API_URL}/sync/status", timeout=5).json()
+    if _sync_status.get("running"):
+        st.sidebar.info("Synchronisation en cours…")
+        time.sleep(4)
+        st.rerun()
+    else:
+        st.session_state["syncing"] = False
+        if _sync_status.get("error"):
+            st.sidebar.error(f"Erreur sync : {_sync_status['error']}")
+        else:
+            st.cache_data.clear()
+            st.sidebar.success("Données mises à jour !")
+        st.rerun()
 
 # Apply date filter
 acts_f = acts[

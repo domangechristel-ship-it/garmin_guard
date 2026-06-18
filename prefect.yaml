@@ -1,0 +1,12 @@
+name: garmin-guard
+prefect-version: "3.x"
+
+deployments:
+  - name: daily-pipeline
+    entrypoint: src/flows/daily_pipeline.py:daily_pipeline
+    schedule:
+      cron: "0 7 * * *"
+      timezone: "Europe/Paris"
+    work_pool:
+      name: default-agent-pool
+    parameters: {}
