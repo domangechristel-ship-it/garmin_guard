@@ -265,6 +265,12 @@ with tab3:
             )
         return fig
 
+    show_cycle_well = st.checkbox(
+        "Afficher les phases du cycle menstruel",
+        disabled=_env == "prod",
+        key="well_show_cycle",
+    )
+
     # Sleep score
     sleep_df = well_f.dropna(subset=["sleep_score"])
     if not sleep_df.empty:
@@ -278,9 +284,10 @@ with tab3:
             x=rolling["athlete_date"], y=rolling["sleep_score"],
             mode="lines", name="Moy 7j", line=dict(color="#2980B9", width=2),
         ))
-        fig_sleep = add_cycle_bands(fig_sleep, well_f)
+        if show_cycle_well:
+            fig_sleep = add_cycle_bands(fig_sleep, well_f)
         fig_sleep.update_layout(
-            title="Score de sommeil (avec phases du cycle)",
+            title="Score de sommeil" + (" (avec phases du cycle)" if show_cycle_well else ""),
             xaxis_title=None, yaxis_title="Score",
             yaxis=dict(range=[0, 100]),
             legend=dict(orientation="h", y=1.1),
@@ -288,8 +295,8 @@ with tab3:
         )
         st.plotly_chart(fig_sleep, width="stretch")
 
-    # Cycle phase legend
-    st.caption("Phases du cycle : 🔴 menstruation · 🟢 folliculaire · 🟡 ovulation · 🔵 lutéale · 🟣 enceinte")
+    if show_cycle_well:
+        st.caption("Phases du cycle : 🔴 menstruation · 🟢 folliculaire · 🟡 ovulation · 🔵 lutéale · 🟣 enceinte")
 
     # Sleep durations stacked area (local only — not in BigQuery)
     _dur_cols = ["deep_sleep_s", "light_sleep_s", "rem_sleep_s"]
@@ -488,7 +495,10 @@ with tab4:
             _planned_records = []
 
     # Cycle overlay toggle — parameters auto-derived from synced wellness data
-    _show_cycle = st.checkbox("Afficher les phases du cycle menstruel")
+    _show_cycle = st.checkbox(
+        "Afficher les phases du cycle menstruel",
+        disabled=_env == "prod",
+    )
     _cycle_last_period: date | None = None
     _cycle_length = 28
     _cycle_period_len = 5

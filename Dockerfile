@@ -4,6 +4,7 @@ COPY requirements.txt requirements.txt
 RUN pip install -r requirements.txt
 
 COPY package_folder package_folder
+COPY src src
 
 ENV ENV=prod
 

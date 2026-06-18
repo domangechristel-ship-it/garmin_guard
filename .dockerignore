@@ -8,4 +8,6 @@ __pycache__
 notebooks/
 tests/
 # streamlit_app.py is needed by Dockerfile.streamlit
-src/
+src/ingestion
+src/features
+src/models
