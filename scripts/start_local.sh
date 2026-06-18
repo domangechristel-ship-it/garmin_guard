@@ -15,4 +15,4 @@ echo "Waiting for API..."
 until curl -s http://localhost:8000/health > /dev/null 2>&1; do sleep 1; done
 echo "API ready — starting Streamlit"
 
-API_URL=http://localhost:8000 streamlit run streamlit_app.py
+API_URL=http://localhost:8000 streamlit run dashboard/streamlit_app.py

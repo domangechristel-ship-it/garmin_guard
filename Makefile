@@ -45,7 +45,7 @@ deploy_dashboard:
 deploy_full: deploy build_dashboard_prod push_dashboard_prod deploy_dashboard
 
 run_dashboard:
-	streamlit run streamlit_app.py
+	streamlit run dashboard/streamlit_app.py
 
 start_local:
 	bash scripts/start_local.sh
